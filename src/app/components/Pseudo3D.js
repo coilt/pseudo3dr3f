@@ -4,87 +4,6 @@ import { Canvas, extend, useFrame, useThree } from '@react-three/fiber'
 import { shaderMaterial, Plane, useTexture } from '@react-three/drei'
 import styles from './styles.component.css'
 
-function requestGyroscopePermissions() {
-  if (
-    typeof DeviceMotionEvent !== 'undefined' &&
-    typeof DeviceMotionEvent.requestPermission === 'function'
-  ) {
-    DeviceMotionEvent.requestPermission()
-      .then((response) => {
-        if (response === 'granted') {
-          console.log('DeviceMotion permissions granted')
-          // Permission granted
-        } else {
-          console.log('DeviceMotion permissions denied')
-          // Permission denied
-        }
-      })
-      .catch(console.error)
-  }
-
-  if (
-    typeof DeviceOrientationEvent !== 'undefined' &&
-    typeof DeviceOrientationEvent.requestPermission === 'function'
-  ) {
-    DeviceOrientationEvent.requestPermission()
-      .then((response) => {
-        if (response === 'granted') {
-          console.log('DeviceOrientation permissions granted')
-          // Permission granted
-        } else {
-          console.log('DeviceOrientation permissions denied')
-          // Permission denied
-        }
-      })
-      .catch(console.error)
-  }
-}
-
-export default function GyroscopeRequestButton() {
-  const [permissionRequested, setPermissionRequested] = useState(false)
-
-  useEffect(() => {
-    const askPermission = async () => {
-      if (
-        typeof DeviceOrientationEvent !== 'undefined' &&
-        typeof DeviceOrientationEvent.requestPermission === 'function'
-      ) {
-        // Request permission
-        const permission = await DeviceOrientationEvent.requestPermission()
-        if (permission === 'granted') {
-          window.addEventListener('deviceorientation', handleOrientation, true)
-        }
-      } else {
-        // Automatically add listener if permissions are not needed (non-iOS 13+ devices)
-        window.addEventListener('deviceorientation', handleOrientation, true)
-      }
-    }
-
-    askPermission()
-    return () => {
-      window.removeEventListener('deviceorientation', handleOrientation, true)
-    }
-  }, [])
-
-  useEffect(() => {
-    // Check if permissions are already granted (maybe add more sophisticated checks)
-    setPermissionRequested(false)
-  }, [])
-
-  return (
-    !permissionRequested && (
-      <button
-        onClick={() => {
-          requestGyroscopePermissions()
-          setPermissionRequested(true)
-        }}
-      >
-        Enable Gyroscope
-      </button>
-    )
-  )
-}
-
 export const Pseudo3D = () => (
   <>
     <div
@@ -109,30 +28,60 @@ function Model(props) {
   const texture = useTexture('./color-mountains.jpg')
   const depthMap = useTexture('./depth-mountains.png')
   const { viewport } = useThree()
-  const [gyroActive, setGyroActive] = useState(false) // State to track gyroscope activity
+  const [isGyroEnabled, setIsGyroEnabled] = useState(false) // Tracks if gyroscope is enabled
+
+  const handleOrientation = (event) => {
+    const { beta, gamma } = event // Extracting rotation around the X and Y axes
+    if (beta !== null && gamma !== null) {
+      const x = gamma * 0.01 // Left-to-right tilt
+      const y = beta * 0.01 // Front-to-back tilt
+      depthMaterial.current.uMouse = [x, -y]
+      setIsGyroEnabled(true) // Indicate that gyro is now active
+    }
+  }
 
   useEffect(() => {
-    // Handle device orientation
-    const handleOrientation = (event) => {
-      const { beta, gamma } = event // Extracting rotation around the X and Y axes
-      if (beta !== null && gamma !== null) {
-        setGyroActive(true) // Gyroscope data is available and being used
-        const x = gamma * 0.01 // Left-to-right tilt
-        const y = beta * 0.01 // Front-to-back tilt
-        depthMaterial.current.uMouse = [x, -y]
+    const askPermission = async () => {
+      // Check for DeviceOrientationEvent support
+      if (
+        typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function'
+      ) {
+        try {
+          const permission = await DeviceOrientationEvent.requestPermission()
+          if (permission === 'granted') {
+            window.addEventListener(
+              'deviceorientation',
+              handleOrientation,
+              true
+            )
+          } else {
+            console.error('Gyroscope permission not granted.')
+          }
+        } catch (error) {
+          console.error(
+            'Error requesting device orientation permission:',
+            error
+          )
+        }
+      } else {
+        // Automatically add listener if permissions are not needed (non-iOS 13+ devices)
+        window.addEventListener('deviceorientation', handleOrientation, true)
       }
     }
 
-    window.addEventListener('deviceorientation', handleOrientation, true)
+    // Request permissions on mount
+    askPermission()
 
     return () => {
+      // Cleanup listener on unmount
       window.removeEventListener('deviceorientation', handleOrientation, true)
     }
   }, [])
 
   useFrame((state) => {
-    // Use mouse for tracking if gyroscope is not active
-    if (!gyroActive) {
+    // Fallback to mouse control if gyroscope is not active
+    if (!isGyroEnabled) {
       depthMaterial.current.uMouse = [
         state.mouse.x * 0.01,
         state.mouse.y * 0.01,
