@@ -1,5 +1,5 @@
-import Image from "next/image";
 import styles from "./page.module.css";
+ 
 import { Pseudo3D } from "./components/Pseudo3D";
  
 

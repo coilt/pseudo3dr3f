@@ -1,12 +1,18 @@
-'use client';
-import { useRef } from 'react';
-import { Canvas, extend, useFrame, useThree } from '@react-three/fiber';
-import { shaderMaterial, Plane, useTexture } from '@react-three/drei';
-import styles from './styles.component.css'
+'use client'; 
+import React, { useState, useCallback } from 'react';
+import { Setup } from './setup';
+import Accelerometer from './accelerometer';
+import { extend } from '@react-three/fiber';
+import { shaderMaterial } from '@react-three/drei';
 
+export const Pseudo3D = () => {
+  const [permissionGranted, setPermissionGranted] = useState(false);
 
-export const Pseudo3D = () => (
-  <>
+  const handleSetPermissionGranted = useCallback((value) => {
+    setPermissionGranted(value);
+  }, [setPermissionGranted]);
+
+  return (
     <div
       style={{
         width: '100vw',
@@ -17,26 +23,13 @@ export const Pseudo3D = () => (
         overflow: 'hidden',
       }}
     >
-    <Canvas style={{ height: '100vh' }}>
-      <Model className={styles.model} />
-    </Canvas>
+      <Setup />
+      <Accelerometer permissionGranted={permissionGranted} setPermissionGranted={handleSetPermissionGranted} />
     </div>
-  </>
-)
+  );
+};
 
-function Model(props) {
-  const depthMaterial = useRef()
-  const texture = useTexture('./color-mountains.jpg')
-  const depthMap = useTexture('./depth-mountains.png')
-  const { viewport } = useThree()
-  useFrame((state) => (depthMaterial.current.uMouse = [state.mouse.x * 0.01, state.mouse.y * 0.01]))
-  return (
-    <Plane args={[1, 1]} scale={[viewport.width, viewport.height, 1]}>
-      <pseudo3DMaterial ref={depthMaterial} uImage={texture} uDepthMap={depthMap} />
-    </Plane>
-  )
-}
-
+// shader
 extend({
   Pseudo3DMaterial: shaderMaterial(
     { uMouse: [0, 0], uImage: null, uDepthMap: null },
@@ -72,6 +65,6 @@ extend({
        vec4 original = texture2D(uImage, (vUv + parallax));
        gl_FragColor = linearTosRGB(original);
     }
-    `,
+    `
   ),
-})
+});
