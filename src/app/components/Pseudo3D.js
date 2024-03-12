@@ -1,4 +1,5 @@
 'use client'
+
 import { useRef, useEffect, useState } from 'react'
 import { Canvas, extend, useFrame, useThree } from '@react-three/fiber'
 import { shaderMaterial, Plane, useTexture } from '@react-three/drei'
@@ -28,64 +29,50 @@ function Model(props) {
   const texture = useTexture('./color-mountains.jpg')
   const depthMap = useTexture('./depth-mountains.png')
   const { viewport } = useThree()
-  const [isGyroEnabled, setIsGyroEnabled] = useState(false) // Tracks if gyroscope is enabled
+  const [isMotionEnabled, setIsMotionEnabled] = useState(false)
 
-  const handleOrientation = (event) => {
-    const { beta, gamma } = event // Extracting rotation around the X and Y axes
-    if (beta !== null && gamma !== null) {
-      const x = gamma * 0.01 // Left-to-right tilt
-      const y = beta * 0.01 // Front-to-back tilt
-      depthMaterial.current.uMouse = [x, -y]
-      setIsGyroEnabled(true) // Indicate that gyro is now active
+  const handleDeviceMotion = (event) => {
+    const { acceleration, rotationRate } = event
+    if (acceleration && rotationRate) {
+      const { x, y } = acceleration
+      const { alpha, beta, gamma } = rotationRate
+      depthMaterial.current.uMouse = [x * 0.01, y * 0.01]
+      depthMaterial.current.uRotation = [alpha * 0.01, beta * 0.01, gamma * 0.01]
+      setIsMotionEnabled(true)
     }
   }
 
   useEffect(() => {
-    const askPermission = async () => {
-      // Check for DeviceOrientationEvent support
-      if (
-        typeof DeviceOrientationEvent !== 'undefined' &&
-        typeof DeviceOrientationEvent.requestPermission === 'function'
-      ) {
-        try {
-          const permission = await DeviceOrientationEvent.requestPermission()
-          if (permission === 'granted') {
-            window.addEventListener(
-              'deviceorientation',
-              handleOrientation,
-              true
-            )
+    const requestPermission = async () => {
+      try {
+        const { DeviceMotionEvent, DeviceOrientationEvent } = window
+        if (DeviceMotionEvent && DeviceOrientationEvent) {
+          const motionPermission = await DeviceMotionEvent.requestPermission()
+          const orientationPermission = await DeviceOrientationEvent.requestPermission()
+          if (motionPermission === 'granted' && orientationPermission === 'granted') {
+            window.addEventListener('devicemotion', handleDeviceMotion, true)
           } else {
-            console.error('Gyroscope permission not granted.')
+            console.error('Motion sensor permission not granted.')
           }
-        } catch (error) {
-          console.error(
-            'Error requesting device orientation permission:',
-            error
-          )
+        } else {
+          console.error('Device motion and orientation events not supported.')
         }
-      } else {
-        // Automatically add listener if permissions are not needed (non-iOS 13+ devices)
-        window.addEventListener('deviceorientation', handleOrientation, true)
+      } catch (error) {
+        console.error('Error requesting motion sensor permission:', error)
       }
     }
 
-    // Request permissions on mount
-    askPermission()
+    requestPermission()
 
     return () => {
-      // Cleanup listener on unmount
-      window.removeEventListener('deviceorientation', handleOrientation, true)
+      window.removeEventListener('devicemotion', handleDeviceMotion, true)
     }
   }, [])
 
   useFrame((state) => {
-    // Fallback to mouse control if gyroscope is not active
-    if (!isGyroEnabled) {
-      depthMaterial.current.uMouse = [
-        state.mouse.x * 0.01,
-        state.mouse.y * 0.01,
-      ]
+    if (!isMotionEnabled) {
+      depthMaterial.current.uMouse = [state.mouse.x * 0.01, state.mouse.y * 0.01]
+      depthMaterial.current.uRotation = [0, 0, 0]
     }
   })
 
@@ -102,7 +89,7 @@ function Model(props) {
 
 extend({
   Pseudo3DMaterial: shaderMaterial(
-    { uMouse: [0, 0], uImage: null, uDepthMap: null },
+    { uMouse: [0, 0], uRotation: [0, 0, 0], uImage: null, uDepthMap: null },
     // Vertex shader
     `
     varying vec2 vUv;
@@ -116,26 +103,28 @@ extend({
     // Fragment shader
     `
     precision mediump float;
-
     uniform vec2 uMouse;
+    uniform vec3 uRotation;
     uniform sampler2D uImage;
     uniform sampler2D uDepthMap;
-
     varying vec2 vUv;
-  
+
     vec4 linearTosRGB( in vec4 value ) {
       return vec4( mix( pow( value.rgb, vec3( 0.41666 ) ) * 1.055 - vec3( 0.055 ), value.rgb * 12.92, vec3( lessThanEqual( value.rgb, vec3( 0.0031308 ) ) ) ), value.a );
     }
-    
-    
+
     void main() {
-       vec4 depthDistortion = texture2D(uDepthMap, vUv);
-       float parallaxMult = depthDistortion.r;
-
-       vec2 parallax = (uMouse) * parallaxMult;
-
-       vec4 original = texture2D(uImage, (vUv + parallax));
-       gl_FragColor = linearTosRGB(original);
+      vec4 depthDistortion = texture2D(uDepthMap, vUv);
+      float parallaxMult = depthDistortion.r;
+      vec2 parallax = uMouse * parallaxMult;
+      vec2 rotatedUv = vUv;
+      rotatedUv = rotatedUv - 0.5;
+      float s = sin(uRotation.z);
+      float c = cos(uRotation.z);
+      rotatedUv = vec2(rotatedUv.x * c - rotatedUv.y * s, rotatedUv.x * s + rotatedUv.y * c);
+      rotatedUv = rotatedUv + 0.5;
+      vec4 original = texture2D(uImage, rotatedUv + parallax);
+      gl_FragColor = linearTosRGB(original);
     }
     `
   ),
