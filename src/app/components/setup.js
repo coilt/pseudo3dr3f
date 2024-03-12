@@ -29,7 +29,7 @@ function Model({ controlsEnabled }) {
   
       // Use amplifiedX and amplifiedY to update the image position or rotation
       // Example:
-      depthMaterial.current.uMouse = [amplifiedX * 5, amplifiedY * 5];
+      depthMaterial.current.uMouse = [amplifiedX * 1, amplifiedY * 1];
     } else {
       // Use original mouse tracking when device orientation controls are not active
       depthMaterial.current.uMouse = [state.mouse.x * 0.01, state.mouse.y * 0.01];
